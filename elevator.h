@@ -1,13 +1,16 @@
 #ifndef ELEVATOR_H
 #include "elevatorpanel.h"
 #define ELEVATOR_H
-#include <QMap>
+
+
 #include <QLineEdit>
+#include <QLabel>
 #include <QTime>
 #include <QRunnable>
+#include <QTextBrowser>
+#include <QSpinBox>
 #include "elevatorcomponentfactory.h"
 
-typedef enum {UP, DOWN, IDLE} Direction;
 
 
 class Elevator : public ElevatorComponentFactory
@@ -16,33 +19,55 @@ class Elevator : public ElevatorComponentFactory
 public:
     Elevator(int, int, QWidget *parent = nullptr);
     ~Elevator();
-    void connectPanel(QWidget *);
-    int floors() const;
-    Direction getDirection();
-    void setDirection(Direction);
-    int getCurrentFloor() const;
-    void updateDisplay(const QString& message);
-    void moveUp();
-    void setFloor(int floor);
-    void moveDown();
-    bool isDoorOpen();
-    void openDoor() {isOpen = true;}
-    void closeDoor() {isOpen = false;}
+    bool ECSConnected = false;
+    bool doorIsOpen = false;
     ElevatorPanel *panel;
+    QTextBrowser *console;
+    QSpinBox *weightBox;
+    Direction getDirection() const {return direction;}
+    Status getStatus() const {return status;}
+    bool isDoorOpen() const { return doorIsOpen;}
+    void setDirection(Direction d) {direction = d;}
+    void setStatus(Status s) {status = s;}
+    int getCurrentFloor() const {return currentFloor;}
+    void increaseFloor();
+    void decreaseFloor();
+    void requestOpenDoor();
+    void requestCloseDoor();
+    bool IsOpenDoorButtonPressed() const {return openDoorButtonPressed;}
+    void updateDisplay(const QString& message);
+    void sendFireAlarmSignal();
+    void sendOverloadSignal();
+    void sendHelpSignal();
+    void statusUpdated();
+    void pinged();
 
 public slots:
+    void writeToConsole(const QString & text);
+    void pressOpenDoor();
+    void releaseOpenDoor();
+    void pressFloorButton();
+    void updateWeight(int w);
+
+
 
 signals:
+    void requestFloor(int floor);
+    void signalConsoleWrite(const QString & text);
     void arrivalNotice(int floor);
+    void requestOpenOrClose(char openDoorSignal);
 
 private:
-    int currentFloor = 0;
-    Direction direction = IDLE;
-    QLineEdit *display;
-    QWidget *elevatorPanel;
-    bool isOpen = false;
-    bool bellRinging = false;
+    int weight = 0;
     int numOfFloors;
+    int currentFloor = 0;
+    int closingAttempts = 0;
+    Direction direction = UP;
+    Status status = IDLE;
+    QLineEdit *display, *audioMessage;
+    QWidget *elevatorPanel;
+    bool bellRinging = false;
+    bool openDoorButtonPressed = false;
 
 };
 
@@ -55,7 +80,8 @@ public:
     ElevatorTask(Elevator *e, const QString & command);
     void moveUp();
     void moveDown();
-    void embark();
+    void doorMonitor();
+    void waitForHelp();
     void run() override;
 private:
     Elevator *targetElevator;

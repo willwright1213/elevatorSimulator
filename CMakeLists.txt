@@ -23,13 +23,18 @@ set(PROJECT_SOURCES
         floor.cpp
         elevatorpanel.cpp
         floorpanel.cpp
+        alarmsignalsingleton.cpp
+        building.cpp
+        defs.h
         ecs.h
         elevatorcomponentfactory.h
         elevator.h
         elevatorpanel.h
+        alarmsignalsingleton.h
         panelfactory.h
         floor.h
         floorpanel.h
+        building.h
         ecs.ui
         elevatorcomponentfactory.ui
 )

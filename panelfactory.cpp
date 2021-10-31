@@ -4,7 +4,7 @@ PanelFactory::PanelFactory(int id, int cols, QWidget *parent):ElevatorComponentF
   cols(cols)
 {
     panelLayout = new QGridLayout();
-    layout->addLayout(panelLayout);
+    layout->addLayout(panelLayout,0,0);
 }
 
 void PanelFactory::addButton(const QString & label) {

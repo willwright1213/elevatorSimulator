@@ -1,10 +1,13 @@
 #ifndef ECS_H
+#include "defs.h"
 #include "elevator.h"
 #include "floor.h"
+#include "building.h"
 #define ECS_H
 #include <QMainWindow>
 #include <QStackedWidget>
 #include <QThreadPool>
+#include <QMutex>
 QT_BEGIN_NAMESPACE
 namespace Ui { class ECS; }
 QT_END_NAMESPACE
@@ -23,20 +26,32 @@ public:
     void showFloor(int id);
     void showElevator(int id);
     void getElevator(int id);
+    void clearAllRequests();
+    bool hasRequests(Elevator *e);
+    void changeElevatorDirection(Elevator *e, Direction d);
+    void changeElevatorStatus(Elevator *e, Status s);
+    void disableOpenCloseButton(Elevator *e);
+    void enableOpenCloseButton(Elevator *e);
+    void startThreadCommand(Elevator *e, QString const & command);
+    void statusUpdated(Elevator *e);
+    void pingElevator(Elevator *e);
 
 public slots:
-    void requestFloor(void);
+    void requestFloor(int);
     void requestElevator(void);
     void receiveArrivalNotice(int floor);
+    void openOrCloseRequest(char doorSignal);
+    void receiveAlarmSignal(int signalCode);
+
 
 private:
     QVector<Elevator *> elevators;
     QVector<Floor *> floors;
+    Building *building;
     QVector<QVector<int>> requestedFloors; //tracks the requested floor handled directly by the elevator
-    QVector<bool> requestedElevator; //tracks the floors that have requested an elevator
     Ui::ECS *ui;
     QTabWidget *elevatorsTab;
-    void addElevatorToGUI(Elevator *e);
+    QTabWidget *floorsTab;
     void writeToConsole(const QString &);
     void commandElevator(Elevator *e);
 };

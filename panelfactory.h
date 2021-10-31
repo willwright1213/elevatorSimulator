@@ -3,15 +3,16 @@
 #define PANELFACTORY_H
 
 #include "elevatorcomponentfactory.h"
+#include <QSpacerItem>
 #include <QPushButton>
 
 class PanelFactory : public ElevatorComponentFactory
 {
 public:
-    PanelFactory(int id, int cols, QWidget *parent = nullptr);
-    void addButton(const QString &);
     QVector<QPushButton *> buttons;
 protected:
+    PanelFactory(int id, int cols, QWidget *parent = nullptr);
+    void addButton(const QString &);
     int cols;
     QGridLayout *panelLayout;
 

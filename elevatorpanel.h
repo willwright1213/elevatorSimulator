@@ -8,6 +8,10 @@ class ElevatorPanel : public PanelFactory
 {
 public:
     ElevatorPanel(int id, int cols, int floors);
+    QPushButton *openButton;
+    QPushButton *closeButton;
+    QPushButton *helpButton;
+    QPushButton *fireButton;
 };
 
 #endif // ELEVATORPANEL_H

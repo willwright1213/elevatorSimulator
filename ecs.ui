@@ -18,7 +18,7 @@
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>3</number>
       </property>
       <widget class="QWidget" name="console">
        <attribute name="title">
@@ -48,6 +48,13 @@ p, li { white-space: pre-wrap; }
        <attribute name="title">
         <string>Floors</string>
        </attribute>
+       <layout class="QHBoxLayout" name="horizontalLayout"/>
+      </widget>
+      <widget class="QWidget" name="building">
+       <attribute name="title">
+        <string>Building</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_4"/>
       </widget>
      </widget>
     </item>

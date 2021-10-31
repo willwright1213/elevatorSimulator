@@ -3,6 +3,7 @@
 #include <QVBoxLayout>
 
 #include <QWidget>
+#include "defs.h"
 
 namespace Ui {
 class ElevatorComponentFactory;
@@ -13,18 +14,22 @@ class ElevatorComponentFactory : public QWidget
     Q_OBJECT
 
 public:
-    explicit ElevatorComponentFactory(int, QWidget *parent = nullptr);
     virtual ~ElevatorComponentFactory();
-    int getID();
+    int getID() const;
+    int getLastAlarm() const;
+    void resetAlarm();
+    void setAlarm(int);
 
 protected:
-    QVBoxLayout *layout;
+    explicit ElevatorComponentFactory(int, QWidget *parent = nullptr);
+    QGridLayout *layout;
+    int alarmSent = RESET_SIGNAL;
 
 protected slots:
     //virtual void requestFromECS(const QString *) = 0;
 
 signals:
-   // virtual void responseToECS(const QString *) = 0;
+   void sendAlarmSignal(int code);
 
 
 protected:
