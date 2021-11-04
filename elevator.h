@@ -1,53 +1,61 @@
 #ifndef ELEVATOR_H
-#include "elevatorpanel.h"
 #define ELEVATOR_H
 
-
+#include <QWidget>
 #include <QLineEdit>
 #include <QLabel>
 #include <QTime>
 #include <QRunnable>
 #include <QTextBrowser>
 #include <QSpinBox>
-#include "elevatorcomponentfactory.h"
+#include <QPushButton>
+
+#include "defs.h"
+
+namespace Ui {
+class Elevator;
+}
 
 
-
-class Elevator : public ElevatorComponentFactory
+class Elevator : public QWidget
 {
     Q_OBJECT
 public:
     Elevator(int, int, QWidget *parent = nullptr);
     ~Elevator();
+    QVector<QPushButton *> buttons;
+    QPushButton *openButton, *closeButton, *helpButton, *fireButton;
     bool ECSConnected = false;
     bool doorIsOpen = false;
-    ElevatorPanel *panel;
-    QTextBrowser *console;
-    QSpinBox *weightBox;
+    bool doorIsBlocked = false;
+    int attempts = 0;
     Direction getDirection() const {return direction;}
+    int getID() const {return id;};
     Status getStatus() const {return status;}
     bool isDoorOpen() const { return doorIsOpen;}
-    void setDirection(Direction d) {direction = d;}
-    void setStatus(Status s) {status = s;}
+    bool IsOpenDoorButtonPressed() const {return openDoorButtonPressed;}
     int getCurrentFloor() const {return currentFloor;}
+    int getAlarmCode() const {return alarmCode;}
+    void setAlarm(int code);
+    void resetAlarm();
+    void setDirection(Direction d);
+    void setStatus(Status s);
     void increaseFloor();
     void decreaseFloor();
     void requestOpenDoor();
     void requestCloseDoor();
-    bool IsOpenDoorButtonPressed() const {return openDoorButtonPressed;}
     void updateDisplay(const QString& message);
+    void updateAudio(const QString &audio);
     void sendFireAlarmSignal();
     void sendOverloadSignal();
     void sendHelpSignal();
-    void statusUpdated();
-    void pinged();
 
 public slots:
-    void writeToConsole(const QString & text);
     void pressOpenDoor();
     void releaseOpenDoor();
     void pressFloorButton();
     void updateWeight(int w);
+    void blockDoor(int arg1);
 
 
 
@@ -56,16 +64,21 @@ signals:
     void signalConsoleWrite(const QString & text);
     void arrivalNotice(int floor);
     void requestOpenOrClose(char openDoorSignal);
+    void sendAlarmSignal(int code, int id);
+
+private slots:
+
 
 private:
+    Ui::Elevator *ui;
+    int id;
     int weight = 0;
-    int numOfFloors;
     int currentFloor = 0;
     int closingAttempts = 0;
+    int alarmCode = RESET_SIGNAL;
+    int numOfFloors;
     Direction direction = UP;
     Status status = IDLE;
-    QLineEdit *display, *audioMessage;
-    QWidget *elevatorPanel;
     bool bellRinging = false;
     bool openDoorButtonPressed = false;
 

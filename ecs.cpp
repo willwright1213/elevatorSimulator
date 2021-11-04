@@ -2,21 +2,24 @@
 #include <QDebug>
 #include "./ui_ecs.h"
 
-ECS::ECS(int numOfFloors, QWidget *parent)
+ECS::ECS(int numOfFloors, int numOfElevators, QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::ECS)
 {
     ui->setupUi(this);
-    elevatorsTab = new QTabWidget;
-    floorsTab = new QTabWidget;
-    building = new Building();
     for(int i = 0; i <= numOfFloors; i++){
         connectFloor();
     }
-    ui->elevators->layout()->addWidget(elevatorsTab);
-    ui->floors->layout()->addWidget(floorsTab);
-    ui->building->layout()->addWidget(building);
-    connect(building, &Building::sendAlarmSignal, this, &ECS::receiveAlarmSignal);
+    connectElevators(numOfElevators);
+    elevators[0]->show();
+    floors[0]->show();
+    currentElevator = elevators[0];
+    currentFloor = floors[0];
+    connect(ui->ElevatorComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ECS::selectElevator);
+    connect(ui->FloorComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ECS::selectFloor);
+    connect(ui->fireAlarm, &QPushButton::pressed, this, &ECS::buildingFireAlarm);
+    connect(ui->powerOut, &QPushButton::pressed, this, &ECS::powerOut);
+    connect(ui->engage, &QPushButton::pressed, this, &ECS::engageWithHelp);
 
 }
 
@@ -24,17 +27,8 @@ ECS::~ECS() {
     for(Elevator *e: qAsConst(elevators)) {
         e->ECSConnected = false;
         e->resetAlarm();
-        qDebug() << e->getLastAlarm();
     }
     delete ui;
-}
-
-void ECS::showFloor(int id){
-    floors[id]->show();
-}
-
-void ECS::showElevator(int id){
-    elevators[id]->show();
 }
 
 /**
@@ -43,12 +37,13 @@ void ECS::showElevator(int id){
 void ECS::connectElevator() {
     Elevator *e = new Elevator(elevators.size(), floors.size());
     elevators.insert(e->getID(), e);
-    connect(e, &Elevator::requestFloor, this, &ECS::requestFloor, Qt::UniqueConnection);
-    connect(e, &Elevator::arrivalNotice, this, &ECS::receiveArrivalNotice, Qt::UniqueConnection);
-    connect(e, &Elevator::requestOpenOrClose, this, &ECS::openOrCloseRequest, Qt::UniqueConnection);
-    connect(e, &Elevator::sendAlarmSignal, this, &ECS::receiveAlarmSignal, Qt::UniqueConnection);
-    elevatorsTab->addTab(e, QString::number(e->getID()));
-
+    connect(e, &Elevator::requestFloor, this, &ECS::requestFloor);
+    connect(e, &Elevator::arrivalNotice, this, &ECS::receiveArrivalNotice);
+    connect(e, &Elevator::requestOpenOrClose, this, &ECS::openOrCloseRequest);
+    connect(e, &Elevator::sendAlarmSignal, this, &ECS::receiveAlarmSignal);
+    ui->ElevatorComboBox->addItem("Elevator " + QString::number(e->getID()));
+    ui->elevatorHolder->addWidget(e);
+    e->hide();
     QVector<int> selectedFloors;
     for(int i=0; i<floors.size(); i++) selectedFloors.append(0);
     requestedFloors.append(selectedFloors);
@@ -77,13 +72,14 @@ void ECS::connectFloor() {
     floors.insert(f->getID(), f);
     //This block re-enables the up and down buttons depending on where the floor is situated relative to othe floors
     if(floors.size() != 1) {
-        f->panel->buttons[1]->setDisabled(false); //re-enable down button
-        floors[floors.size() - 2]->panel->buttons[0]->setDisabled(false); //re-enable up button for previous floor
+        f->enableDownButton(); //re-enable down button
+        floors[floors.size() - 2]->enableUpButton(); //re-enable up button for previous floor
     }
     //connect the floor buttons to the ecs
-    connect(f->panel->buttons[0], &QPushButton::released, this, &ECS::requestElevator);
-    connect(f->panel->buttons[1], &QPushButton::released, this, &ECS::requestElevator);
-    floorsTab->addTab(f, QString::number(f->getID()));
+    connect(f, &Floor::requestElevator, this, &ECS::requestElevator);
+    ui->FloorComboBox->addItem("Floor " + QString::number(f->getID()));
+    ui->floorHolder->addWidget(f);
+    f->hide();
     writeToConsole("Floor id: " + QString::number(f->getID()) + " connected to the ECS");
 }
 
@@ -120,13 +116,13 @@ void ECS::writeToConsole(const QString & text) {
 }
 
 void ECS::enableOpenCloseButton(Elevator *e){
-    e->panel->openButton->setDisabled(false);
-    e->panel->closeButton->setDisabled(false);
+    e->openButton->setDisabled(false);
+    e->closeButton->setDisabled(false);
 }
 
 void ECS::disableOpenCloseButton(Elevator *e){
-    e->panel->openButton->setDisabled(true);
-    e->panel->closeButton->setDisabled(true);
+    e->openButton->setDisabled(true);
+    e->closeButton->setDisabled(true);
 }
 
 void ECS::changeElevatorDirection(Elevator *e, Direction d) {
@@ -135,14 +131,13 @@ void ECS::changeElevatorDirection(Elevator *e, Direction d) {
 
 void ECS::changeElevatorStatus(Elevator *e, Status s) {
     if(e->doorIsOpen && s == MOVING) return; //Don't want to move while the door is open
-    if(s == STOP || s == IDLE) {
-        if(e->getLastAlarm() == -1) enableOpenCloseButton(e);
+    if(s == STOP || s == IDLE || s == ARRIVAL) {
+        if(e->getAlarmCode() == -1) enableOpenCloseButton(e);
     }
     else {
         disableOpenCloseButton(e);
     }
         e->setStatus(s);
-        statusUpdated(e);
 }
 
 
@@ -152,26 +147,15 @@ void ECS::startThreadCommand(Elevator *e, const QString &command) {
 }
 
 
-void ECS::statusUpdated(Elevator *e) {
-    e->statusUpdated();
-}
-
-void ECS::pingElevator(Elevator *e) {
-    e->pinged();
-}
-
-
 /**
  * @brief Called by the elevator buttons when requesting to go to a given floor
  */
 void ECS::requestFloor(int floor) {
     Elevator *e = qobject_cast<Elevator *>(sender());
     int id = e->getID();
-    e->panel->buttons[floor]->setDisabled(true);
+    e->buttons[floor]->setDisabled(true);
     requestedFloors[id][floor] = 1;
-    if(e->getStatus() == IDLE) {
-        pingElevator(e);
-    }
+    if(e->getStatus() == IDLE) changeElevatorStatus(e, STOP);
     writeToConsole("Elevator " + QString::number(id) + " requested floor " + QString::number(floor));
 }
 
@@ -181,30 +165,26 @@ void ECS::requestFloor(int floor) {
  * @param e: The elevator to control
  */
 void ECS::commandElevator(Elevator *e) {
-    qDebug() << "ping";
     if(!hasRequests(e)) {
         writeToConsole("Elevator " + QString::number(e->getID()) + " has no more requests");
         changeElevatorStatus(e, IDLE);
     }
-    else if(e->getStatus() == IDLE) {
-        changeElevatorStatus(e, STOP);
-    }
-    if(e->getStatus() == STOP && !e->doorIsOpen){
+    //If floors left and previous status is ARRIVAL, will ring the bell becaus it still has a job to do.
+    if(e->getStatus() == ARRIVAL) writeToConsole("Elevator " + QString::number(e->getID()) + " rings the bell");
+    if((e->getStatus() == STOP) && !e->doorIsOpen){
         if(e->getDirection() == UP) {
             for(int i=e->getCurrentFloor() + 1; i < floors.size(); i++) {
                 if(requestedFloors[e->getID()][i] == 1) {
-                    e->setStatus(MOVING);
+                    changeElevatorStatus(e, MOVING);
                     startThreadCommand(e, "moveUp");
-
                     return;
                 }
             }
             for(int i=e->getCurrentFloor() - 1; i >= 0; i--) {
                 if(requestedFloors[e->getID()][i] == 1) {
-                    e->setStatus(MOVING);
+                    changeElevatorStatus(e, MOVING);
                     e->setDirection(DOWN);
                     startThreadCommand(e, "moveDown");
-
                     return;
                 }
             }
@@ -212,34 +192,27 @@ void ECS::commandElevator(Elevator *e) {
         else if(e->getDirection() == DOWN) {
             for(int i=e->getCurrentFloor() - 1; i >= 0; i--) {
                 if(requestedFloors[e->getID()][i] == 1) {
-                    e->setStatus(MOVING);
+                    changeElevatorStatus(e, MOVING);
                     startThreadCommand(e, "moveDown");
-
                     return;
                 }
             }
             for(int i=e->getCurrentFloor() + 1; i < floors.size(); i++) {
                 if(requestedFloors[e->getID()][i] == 1) {
-                    e->setStatus(MOVING);
+                    changeElevatorStatus(e, MOVING);
                     e->setDirection(UP);
                     startThreadCommand(e, "moveUp");
-
                     return;
                 }
             }
         }
     }
-    changeElevatorStatus(e, IDLE);
-
 }
 
 /**
  * @brief When a floor request to get an elevator. Follows an order of priority.
  */
-void ECS::requestElevator(void) {
-    QPushButton *b = qobject_cast<QPushButton *>(sender());
-    int floorID = qobject_cast<ElevatorComponentFactory *>(b->parentWidget())->getID();
-    Direction direction = b->text() == "Up" ? UP : DOWN;
+void ECS::requestElevator(int floorID, Direction direction) {
     //1. Check if there's an STOP elevator on the currentFloor
     Elevator *firstPrio = nullptr;
     Elevator *secondPrio = nullptr;
@@ -298,43 +271,60 @@ void ECS::requestElevator(void) {
         else if(secondPrio) foundElevator = secondPrio;
         else if(thirdPrio) foundElevator = thirdPrio;
         //Then we signal the elevator that we want this floor by signaling the elevator button
-        emit foundElevator->panel->buttons[floorID]->released();
+        emit foundElevator->buttons[floorID]->released();
 }
 
 
 void ECS::receiveArrivalNotice(int floor) {
     Elevator *e = qobject_cast<Elevator *>(sender());
-    e->writeToConsole(" arrived at floor " + QString::number(floor));
-    if(e->getLastAlarm() == -1) e->updateDisplay("Floor: " + QString::number(e->getCurrentFloor()));
-    changeElevatorStatus(e, STOP);
+    writeToConsole("Elevator " + QString::number(e->getID()) + " arrived at floor " + QString::number(floor));
+    if(e->getAlarmCode() == -1) e->updateDisplay("Floor: " + QString::number(e->getCurrentFloor()));
     if(requestedFloors[e->getID()][floor] == 1) {
-        e->writeToConsole("Ding");
+        //Start the arrival sequence
+        writeToConsole("Elevator " + QString::number(e->getID()) + " rings the bell");
         requestedFloors[e->getID()][floor] = 0;
-        e->panel->buttons[floor]->setDisabled(false);
-        e->requestOpenDoor();
+        e->buttons[floor]->setDisabled(false);
+        changeElevatorStatus(e, ARRIVAL);
         return;
     }
-    // else move along and do the next one
     commandElevator(e);
 }
 
 void ECS::openOrCloseRequest(char doorSignal) {
     Elevator *e = qobject_cast<Elevator *>(sender());
-    if(e->getStatus() != STOP && e->getStatus() != IDLE) return; //Don't want to open door while the elevator is moving
+    if(e->getStatus() != STOP && e->getStatus() != IDLE && e->getStatus() != ARRIVAL) return; //Don't want to open door while the elevator is moving
     if(doorSignal == OPEN_DOOR) {
         if(e->doorIsOpen) return;
         e->doorIsOpen = true;
-        e->weightBox->setDisabled(false);
-        e->writeToConsole("Opening doors");
+        writeToConsole("Elevator " + QString::number(e->getID()) + " is opening doors");
     }
     else if(doorSignal == CLOSE_DOOR) {
         if(!e->doorIsOpen) return;
-        e->doorIsOpen = false;
-        e->weightBox->setDisabled(true);
-        e->writeToConsole("closing doors");
-        e->writeToConsole("ding");
-        commandElevator(e);
+        e->attempts++;
+        if(e->doorIsBlocked == true) {
+            if(e->attempts >= 4) {
+                e->updateDisplay("Please clear the path for the doors to close.");
+                e->updateAudio("Please clear the path for the doors to close.");
+                return;
+            }
+            writeToConsole("Door is blocked, attempting to close again.");
+        }
+        else {
+            e->doorIsOpen = false;
+            writeToConsole("Elevator " + QString::number(e->getID()) + " is closing doors");
+            e->attempts = 0;
+            changeElevatorStatus(e, STOP);
+        }
     }
+}
+
+
+void ECS::buildingFireAlarm() {
+    receiveAlarmSignal(FIRE_SIGNAL, -1);
+}
+
+void ECS::powerOut() {
+    receiveAlarmSignal(POWER_SIGNAL, -1);
 }
 
 /**
@@ -343,9 +333,7 @@ void ECS::openOrCloseRequest(char doorSignal) {
  * @param id - It is either the id of the elevator or the building that sent the signal.
  * Note that -1 is reserved by the building and everything else are elevators.
  */
-void ECS::receiveAlarmSignal(int signalCode) {
-    int id = qobject_cast<ElevatorComponentFactory *>(sender())->getID();
-    qDebug() << id;
+void ECS::receiveAlarmSignal(int signalCode, int id) {
     if(signalCode == FIRE_SIGNAL) {
         if(id == -1) {
             for(Elevator *e: qAsConst(elevators)) {
@@ -355,30 +343,63 @@ void ECS::receiveAlarmSignal(int signalCode) {
         else {
             Elevator *e = elevators[id];
             e->setAlarm(FIRE_SIGNAL);
-            e->updateDisplay("Fire Alarm issued, please the disdoorMonitor to the next available floor.");
+            e->updateDisplay("Fire Alarm issued, please the disembark at the next available floor.");
+            e->updateAudio("Fire Alarm issued, please the disembark at the next available floor.");
             for(int i=0; i < floors.size(); i ++)
                 requestedFloors[id][i] = 0;
-            for(QPushButton *b: qAsConst(e->panel->buttons))
+            for(QPushButton *b: qAsConst(e->buttons))
                 b->setDisabled(true);
         }
     }
     if(signalCode == OVERLOAD_SIGNAL) {
         Elevator *e = elevators[id];
-        if(e->getLastAlarm() == FIRE_SIGNAL || e->getLastAlarm() == HELP_SIGNAL ||
-                e->getLastAlarm() == POWER_SIGNAL)
+        if(e->getAlarmCode() == FIRE_SIGNAL || e->getAlarmCode() == HELP_SIGNAL ||
+                e->getAlarmCode() == POWER_SIGNAL)
             return; //These signals take precedence and should not be overwritten.
-        qDebug() << "Weight signal";
         e->updateDisplay("The elevator will not move until the load has been reduced.");
-        e->writeToConsole("Audio message: please reduce the load of the elevator.");
+        e->updateAudio("The elevator will not move until the load has been reduced.");
     }
     if(signalCode == HELP_SIGNAL) {
         Elevator *e = elevators[id];
-        if(e->getLastAlarm() == HELP_SIGNAL) { //sent a second time
-            writeToConsole("THE ECS CALLED 911 for Elevator: " + QString::number(id));
+        if(e->getAlarmCode() == HELP_SIGNAL) { //sent a second time
+            writeToConsole("Elevator " + QString::number(e->getID()) + " sent request to call 911");
         }
         else {
             e->setAlarm(HELP_SIGNAL);
+            startThreadCommand(e, "waitForHelp");
+            writeToConsole("Elevator " + QString::number(id) + " requested help.");
+        }
+    }
+    if(signalCode == POWER_SIGNAL) {
+        for(Elevator *e: qAsConst(elevators)) {
+            e->setAlarm(POWER_SIGNAL);
+            e->updateDisplay("POWER OUT, please disembark on the next available floor.");
+            e->updateAudio("Power out, please disembark the next available floor.");
+            for(int i=0; i < floors.size(); i ++)
+                requestedFloors[e->getID()][i] = 0;
+            for(QPushButton *b: qAsConst(e->buttons))
+                b->setDisabled(true);
         }
     }
 }
 
+void ECS::selectElevator(int index) {
+    currentElevator->hide();
+    elevators[index]->show();
+    currentElevator = elevators[index];
+}
+
+void ECS::selectFloor(int index) {
+    currentFloor->hide();
+    floors[index]->show();
+    currentFloor = floors[index];
+}
+
+void ECS::engageWithHelp() {
+    for(Elevator *e: qAsConst(elevators)){
+        if(e->getAlarmCode() == HELP_SIGNAL) {
+            e->resetAlarm();
+            writeToConsole("Help was received, clearing help signal");
+        }
+    }
+}

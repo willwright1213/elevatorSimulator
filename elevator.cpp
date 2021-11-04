@@ -1,82 +1,111 @@
 #include "elevator.h"
+#include "ui_elevator.h"
 #include <QDebug>
 
-Elevator::Elevator(int id, int floors, QWidget *parent):ElevatorComponentFactory(id, parent),
+Elevator::Elevator(int id, int floors, QWidget *parent):
+    id(id),
+    QWidget(parent),
+    ui(new Ui::Elevator),
     numOfFloors(floors)
 {
-    //Define labels
-    QLabel *weightLabel = new QLabel("weight: (x 60kg) ");
-    QLabel *displayLabel = new QLabel("Display: ");
-    QLabel *audioLabel = new QLabel("Audio: ");
+    ui->setupUi(this);
+    ui->elevatorLabel->setText("Elevator " + QString::number(id));
     //QLine edit
-    audioMessage = new QLineEdit();
-    display = new QLineEdit("Floor: 0");
-    display->setReadOnly(true);
-    weightBox = new QSpinBox();
-    weightBox->setDisabled(true);
     //Add button panel and set things up
-    panel = new ElevatorPanel(id, 3, floors);
-    console = new QTextBrowser();
-    //Adding everything to the layout
-    layout->addWidget(displayLabel,0, 0);
-    layout->addWidget(display, 0, 1, 1, 5);
-    layout->addWidget(audioLabel, 1, 0);
-    layout->addWidget(audioMessage, 1, 1, 1, 5);
-    layout->addWidget(panel, 2, 2, 1, 2);
-    layout->addWidget(weightLabel, 3,0);
-    layout->addWidget(weightBox, 3, 1);
-    layout->addWidget(console,4, 0, 1, 6);
-    //Connections
-    for(int i = 0; i < numOfFloors; i++) {
-        connect(panel->buttons[i], &QPushButton::released, this, &Elevator::pressFloorButton);
+    int i;
+    QPushButton *b;
+    for(i = 0; i < floors; i++) {
+        QPushButton *b = new QPushButton(QString::number(i));
+        ui->panelLayout->addWidget(b, i/3, i%3);
+        connect(b, &QPushButton::released, this, &Elevator::pressFloorButton);
+        buttons.append(b);
     }
-    connect(this, &Elevator::signalConsoleWrite, this, &Elevator::writeToConsole);
-    connect(panel->openButton, &QPushButton::pressed, this, &Elevator::pressOpenDoor);
-    connect(panel->openButton, &QPushButton::released, this, &Elevator::releaseOpenDoor);
-    connect(panel->fireButton, &QPushButton::pressed, this, &Elevator::sendFireAlarmSignal);
-    connect(panel->helpButton, &QPushButton::pressed, this, &Elevator::sendHelpSignal);
-    connect(weightBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Elevator::updateWeight);
+    openButton = new QPushButton("Open");
+    ui->panelLayout->addWidget(openButton, buttons.size()/3, buttons.size()%3);
+    buttons.append(openButton);
+    connect(openButton, &QPushButton::pressed, this, &Elevator::pressOpenDoor);
+    connect(openButton, &QPushButton::released, this, &Elevator::releaseOpenDoor);
+    closeButton = new QPushButton("Close");
+    ui->panelLayout->addWidget(closeButton, buttons.size()/3, buttons.size()%3);
+    buttons.append(closeButton);
+    //connect(closeButton, &QPushButton::released, this, &Elevator::pressFloorButton);
+    helpButton = new QPushButton("Help");
+    ui->panelLayout->addWidget(helpButton, buttons.size()/3, buttons.size()%3);
+    buttons.append(closeButton);
+    connect(helpButton, &QPushButton::pressed, this, &Elevator::sendHelpSignal);
+    fireButton = new QPushButton("Fire");
+    ui->panelLayout->addWidget(fireButton, buttons.size()/3, buttons.size()%3);
+    buttons.append(fireButton);
+    connect(fireButton, &QPushButton::pressed, this, &Elevator::sendFireAlarmSignal);
+
+    connect(ui->weightSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Elevator::updateWeight);
+    connect(ui->doorBlockingCheck, &QCheckBox::stateChanged, this, &Elevator::blockDoor);
 }
 
 void Elevator::updateDisplay(const QString &message) {
-    display->clear();
-    display->insert(message);
+    ui->display->clear();
+    ui->display->insert(message);
+}
+
+void Elevator::updateAudio(const QString &audio) {
+    ui->audio->clear();
+    ui->audio->insert(audio);
 }
 
 void Elevator::increaseFloor() {
-    emit arrivalNotice(++currentFloor);
+    currentFloor++;
+    setStatus(STOP);
 }
 
 void Elevator::decreaseFloor() {
-    emit arrivalNotice(--currentFloor);
+    currentFloor--;
+    setStatus(STOP);
 }
 
 void Elevator::updateWeight(int w) {
     weight = w * 100;
     if(weight >= CAPACITY_LIMIT) {
         sendOverloadSignal();
-        alarmSent = OVERLOAD_SIGNAL;
+        alarmCode = OVERLOAD_SIGNAL;
     }
-    if(weight < CAPACITY_LIMIT && alarmSent == OVERLOAD_SIGNAL) {
+    if(weight < CAPACITY_LIMIT && alarmCode == OVERLOAD_SIGNAL) {
         resetAlarm();
     }
 }
 
-void Elevator::writeToConsole(const QString & text) {
-    QString fullText = ">> ";
-    fullText += text;
-    console->append(fullText);
+void Elevator::setAlarm(int code) { alarmCode = code;}
+
+void Elevator::resetAlarm() {
+    alarmCode = RESET_SIGNAL;
+    ui->audio->clear();
+    updateDisplay("Floor: " + QString::number(currentFloor));
 }
+
+void Elevator::setDirection(Direction d) { direction = d; }
+
+void Elevator::setStatus(Status s) {
+    status = s;
+    if(status == STOP) {
+        emit arrivalNotice(currentFloor);
+        ui->weightSpinBox->setDisabled(true);
+    }
+    if(status == ARRIVAL) {
+        ui->weightSpinBox->setDisabled(false);
+        requestOpenDoor();
+    }
+    if(status == IDLE && alarmCode != RESET_SIGNAL) {
+        requestOpenDoor();
+    }
+}
+
 
 //These two functions are the slots when the open button is pressed/released
 void Elevator::pressOpenDoor(){
-    writeToConsole("Open Door button is pressed");
     requestOpenDoor();
     openDoorButtonPressed = true;
 }
 
 void Elevator::releaseOpenDoor(){
-    writeToConsole("Open Door button is released");
     openDoorButtonPressed = false;
 }
 
@@ -85,17 +114,6 @@ void Elevator::pressFloorButton() {
     emit requestFloor(b->text().toInt());
 }
 
-void Elevator::statusUpdated() {
-    if(status == IDLE) requestOpenDoor();
-}
-
-/**
- * @brief Elevator::pinged when the ECS pings the elevator, it response with its current floor.
- */
-void Elevator::pinged() {
-    qDebug() << "pinged";
-    emit arrivalNotice(currentFloor);
-}
 
 /** Signals **/
 
@@ -103,30 +121,35 @@ void Elevator::pinged() {
  * @brief Elevator::requestOpenDoor asks the ECS to open the door
  */
 void Elevator::requestOpenDoor() {
-    if(!doorIsOpen) emit requestOpenOrClose(OPEN_DOOR);
+    emit requestOpenOrClose(OPEN_DOOR);
 }
 
 /**
  * @brief Elevator::requestCloseDoor asks the ECS to close the door
  */
 void Elevator::requestCloseDoor() {
-    if(doorIsOpen) emit requestOpenOrClose(CLOSE_DOOR);
+    emit requestOpenOrClose(CLOSE_DOOR);
 }
 
 void Elevator::sendFireAlarmSignal() {
-   emit sendAlarmSignal(FIRE_SIGNAL);
+   emit sendAlarmSignal(FIRE_SIGNAL, id);
 }
 
 void Elevator::sendOverloadSignal() {
-    emit sendAlarmSignal(OVERLOAD_SIGNAL);
+    emit sendAlarmSignal(OVERLOAD_SIGNAL, id);
 }
 
 void Elevator::sendHelpSignal() {
-    emit sendAlarmSignal(HELP_SIGNAL);
+    emit sendAlarmSignal(HELP_SIGNAL, id);
+}
+
+void Elevator::blockDoor(int arg1)
+{
+    doorIsBlocked = arg1;
 }
 
 Elevator::~Elevator(){
-
+    delete ui;
 }
 
 typedef void (*task)(void);
@@ -158,12 +181,21 @@ void ElevatorTask::doorMonitor() {
     while(targetElevator->ECSConnected) {
         while(targetElevator->isDoorOpen()) {
             QTime travelTime = QTime::currentTime().addSecs(10);
-            while(QTime::currentTime() < travelTime) {
-                if(!targetElevator->ECSConnected) return;
-                if (!targetElevator->isDoorOpen()) break;
+            QTime doItAgain = QTime::currentTime().addSecs(2);
+            if(targetElevator->attempts == 0) {
+                while(QTime::currentTime() < travelTime) {
+                    if(!targetElevator->ECSConnected) return;
+                    if (!targetElevator->isDoorOpen()) break;
+                }
+            }
+            else {
+                while(QTime::currentTime() < travelTime) {
+                    if(!targetElevator->ECSConnected) return;
+                    if (!targetElevator->isDoorOpen()) break;
+                }
             }
             while(targetElevator->IsOpenDoorButtonPressed()
-                  || targetElevator->getLastAlarm() != -1
+                  || targetElevator->getAlarmCode() != -1
                   || targetElevator->getStatus() == IDLE) {
                 if(!targetElevator->ECSConnected) return;
             }
@@ -173,14 +205,12 @@ void ElevatorTask::doorMonitor() {
 }
 
 void ElevatorTask::waitForHelp() {
-    while(targetElevator->ECSConnected) {
-        QTime travelTime = QTime::currentTime().addSecs(10);
-        while(QTime::currentTime() < travelTime) {
-            if(!targetElevator->ECSConnected) return;
-            if(targetElevator->getLastAlarm() != HELP_SIGNAL) return;
-        }
-        targetElevator->sendHelpSignal(); //send the second help signal
+    QTime waitTime = QTime::currentTime().addSecs(5);
+    while(QTime::currentTime() < waitTime) {
+        if(!targetElevator->ECSConnected) return;
+        if(targetElevator->getAlarmCode() != HELP_SIGNAL) return;
     }
+    targetElevator->sendHelpSignal(); //send the second help signal
 }
 
 void ElevatorTask::run() {
@@ -190,4 +220,8 @@ void ElevatorTask::run() {
         moveDown();
     if(command == "doorMonitor")
         doorMonitor();
+    if(command == "waitForHelp")
+        waitForHelp();
 }
+
+

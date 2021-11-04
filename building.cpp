@@ -3,8 +3,9 @@
 
 Building::Building():ElevatorComponentFactory(-1)
 {
-    fireAlarm = new QPushButton("Fire Alarm");
+    fireAlarm = new QPushButton("Building's Fire Alarm");
     powerOut = new QPushButton("Power out");
+    layout->setVerticalSpacing(1);
     layout->addWidget(fireAlarm);
     layout->addWidget(powerOut);
     connect(fireAlarm, &QPushButton::pressed, this, &Building::sendFireAlarmSignal);
@@ -13,9 +14,9 @@ Building::Building():ElevatorComponentFactory(-1)
 
 
 void Building::sendFireAlarmSignal(){
-    emit sendAlarmSignal(FIRE_SIGNAL);
+    emit sendAlarmSignal(FIRE_SIGNAL, getID());
 }
 
 void Building::sendPowerOutSignal() {
-    emit sendAlarmSignal(POWER_SIGNAL);
+    emit sendAlarmSignal(POWER_SIGNAL, getID());
 }

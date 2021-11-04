@@ -16,27 +16,16 @@ find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets REQUIRED)
 
 set(PROJECT_SOURCES
         main.cpp
-        elevatorcomponentfactory.cpp
-        panelfactory.cpp
         ecs.cpp
         elevator.cpp
         floor.cpp
-        elevatorpanel.cpp
-        floorpanel.cpp
-        alarmsignalsingleton.cpp
-        building.cpp
         defs.h
         ecs.h
-        elevatorcomponentfactory.h
         elevator.h
-        elevatorpanel.h
-        alarmsignalsingleton.h
-        panelfactory.h
         floor.h
-        floorpanel.h
-        building.h
         ecs.ui
-        elevatorcomponentfactory.ui
+        elevator.ui
+        floor.ui
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

@@ -13,6 +13,6 @@
 #define CAPACITY_LIMIT 1000
 
 typedef enum {UP, DOWN} Direction;
-typedef enum {STOP, IDLE, MOVING} Status;
+typedef enum {STOP, IDLE, MOVING, ARRIVAL} Status;
 
 #endif // DEFS_H
